@@ -251,6 +251,38 @@
     margin-bottom:16px;
     line-height:1.5;
   }
+  .warning-banner{
+    background:#FBF3DE;
+    border:1px solid #E4C97A;
+    color:var(--brass-dark);
+    border-radius:4px;
+    padding:12px 15px;
+    font-size:13.5px;
+    margin-bottom:16px;
+    line-height:1.5;
+  }
+
+  .flags-box{
+    border:1px solid var(--rule);
+    border-radius:5px;
+    background:var(--paper);
+    padding:14px 16px;
+    margin-bottom:20px;
+  }
+  .flags-box h4{
+    margin:0 0 8px;
+    font-size:12.5px;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    color:var(--muted);
+  }
+  .flags-box h4:not(:first-child){ margin-top:14px; }
+  .flags-box ul{
+    margin:0;
+    padding-left:18px;
+    font-size:13px;
+    line-height:1.6;
+  }
 
   /* ---------- Summary + preview ---------- */
   .summary-line{
@@ -377,6 +409,18 @@
         <div id="fileChipHolder"></div>
         <div id="step2-error"></div>
 
+        <label class="field-label" style="margin-top:8px;">Page map <span style="color:var(--muted);font-weight:400;">(optional &mdash; adds one PDF page-range row per lesson)</span></label>
+
+        <div class="dropzone" id="mapDropzone">
+          <div class="glyph">&#128203;</div>
+          <div class="main">Click to choose the page map, or drop it here</div>
+          <div class="sub">*-pdf_page_map.csv</div>
+        </div>
+        <input type="file" id="mapFileInput" accept=".csv,.xlsx,.xls">
+
+        <div id="mapChipHolder"></div>
+        <div id="step2-map-error"></div>
+
         <div class="btn-row">
           <button class="btn btn-ghost" id="backTo1">&larr; Back</button>
         </div>
@@ -393,6 +437,8 @@
           <table class="preview" id="previewTable"></table>
         </div>
         <div class="preview-note" id="previewNote"></div>
+
+        <div id="flagsArea"></div>
 
         <div class="btn-row">
           <button class="btn btn-primary" id="downloadXlsx">Download roster (.xlsx)</button>
@@ -416,7 +462,14 @@
     childName: '',
     courseName: '',
     fileName: '',
-    outRows: null // array of [Child Name, Course Name, Unit Name, Lesson Name, Activity Type, Activity Name]
+    mapFileName: '',
+    countsRows: null,    // raw parsed rows from the counts sheet, kept so the map can be added/rebuilt later
+    pageMap: null,       // { "unitlesson": [trimmed_page,...] } from the map CSV, or null if none uploaded
+    outRows: null,       // array of [Child Name, Course Name, Unit Name, Lesson Name, Activity Type, Activity Name]
+    lessonCount: 0,
+    noncontigLessons: [],
+    lessonsWithoutPdf: [],
+    unmatchedMapLessons: []
   };
 
   var OUT_HEADERS = ['Child Name','Course Name','Unit Name','Lesson Name','Activity Type','Activity Name'];
@@ -457,8 +510,73 @@
     return String(rawType == null ? '' : rawType).trim();
   }
 
+  // Separator used to join Unit Name + Lesson Name into one lookup key;
+  // matches the character buildRoster's own grouping uses.
+  var KEY_SEP = '\u0001';
+
+  // Parses the optional page-map CSV into a per-lesson list of trimmed page
+  // numbers, keyed the same way buildRoster keys its lesson groups.
+  function parsePageMap(rows){
+    if (!rows || !rows.length){
+      return { error: "The page map file has no rows." };
+    }
+    var headers = Object.keys(rows[0]);
+    var tpCol = findColumn(headers, ['trimmed_page', 'trimmed page', 'trimmed']);
+    var unitCol = findColumn(headers, ['unit']);
+    var lessonCol = findColumn(headers, ['lesson']);
+    if (!tpCol || !unitCol || !lessonCol){
+      return { error: "The page map needs trimmed_page, Unit Name, and Lesson Name columns." };
+    }
+
+    var pagesByLesson = {};
+    var allPages = [];
+    rows.forEach(function(r){
+      var unit = String(r[unitCol] == null ? '' : r[unitCol]).trim();
+      var lesson = String(r[lessonCol] == null ? '' : r[lessonCol]).trim();
+      var pg = parseInt(r[tpCol], 10);
+      if ((!unit && !lesson) || isNaN(pg)) return;
+      var key = unit + KEY_SEP + lesson;
+      if (!pagesByLesson[key]) pagesByLesson[key] = [];
+      pagesByLesson[key].push(pg);
+      allPages.push(pg);
+    });
+
+    // The whole file's trimmed_page values should form a clean 1..N sequence;
+    // gaps or duplicates mean the producer likely erred. Warn, don't block.
+    var warnings = [];
+    var sorted = allPages.slice().sort(function(a, b){ return a - b; });
+    var clean = true;
+    for (var i=0;i<sorted.length;i++){
+      if (sorted[i] !== i+1){ clean = false; break; }
+    }
+    if (!clean){
+      warnings.push('The page map’s trimmed_page column has gaps or duplicates instead of a clean 1–' + sorted.length + ' sequence — double-check the source file.');
+    }
+
+    return { pagesByLesson: pagesByLesson, warnings: warnings };
+  }
+
+  // Collapses a lesson's trimmed page numbers into a display range, e.g.
+  // "12-19" or the non-contiguous "12-14, 17". Single page renders bare.
+  function buildPageRange(pages, dash){
+    dash = dash || '–'; // en dash
+    var uniq = pages.slice().sort(function(a, b){ return a - b; })
+                    .filter(function(v, i, a){ return i === 0 || v !== a[i-1]; });
+    if (!uniq.length) return { range: '', noncontig: false, count: 0 };
+    var runs = [], start = uniq[0], prev = uniq[0];
+    for (var i=1;i<uniq.length;i++){
+      if (uniq[i] === prev + 1){ prev = uniq[i]; }
+      else { runs.push([start, prev]); start = prev = uniq[i]; }
+    }
+    runs.push([start, prev]);
+    var parts = runs.map(function(r){ return r[0] === r[1] ? String(r[0]) : r[0] + dash + r[1]; });
+    return { range: parts.join(', '), noncontig: runs.length > 1, count: uniq.length };
+  }
+
   // rows: array of plain objects as parsed from the sheet's header row
-  function buildRoster(rows, childName, courseName){
+  // pagesByLesson: optional map from parsePageMap(); when present, inserts a
+  // PDF page-range row per lesson right after that lesson's Video row(s).
+  function buildRoster(rows, childName, courseName, pagesByLesson){
     if (!rows || !rows.length){
       return { error: "That file doesn't have any rows to read." };
     }
@@ -481,7 +599,7 @@
       var lesson = String(row[lessonCol] == null ? '' : row[lessonCol]).trim();
       if (!unit && !lesson) return; // skip blank rows
 
-      var key = unit + '\u0001' + lesson;
+      var key = unit + KEY_SEP + lesson;
       if (!groups[key]){
         groups[key] = { unit: unit, lesson: lesson, video: 0, practice: 0, quiz: 0, other: [] };
         order.push(key);
@@ -498,6 +616,10 @@
     });
 
     var out = [];
+    var noncontigLessons = [];
+    var lessonsWithoutPdf = [];
+    var matchedLessonKeys = {};
+
     order.forEach(function(key){
       var g = groups[key];
 
@@ -509,6 +631,20 @@
           for (var i=1;i<=g.video;i++){
             out.push([childName, courseName, g.unit, g.lesson, 'Video', g.lesson + ' Video ' + i]);
           }
+        }
+      }
+
+      // Optional PDF row: the one place that decides its placement, per
+      // convention, right after Video and before Practice Level.
+      if (pagesByLesson){
+        var pm = pagesByLesson[key];
+        if (pm && pm.length){
+          var built = buildPageRange(pm);
+          out.push([childName, courseName, g.unit, g.lesson, 'PDF', built.range]);
+          if (built.noncontig) noncontigLessons.push(g.unit + ' / ' + g.lesson + ' (' + built.range + ')');
+          matchedLessonKeys[key] = true;
+        } else {
+          lessonsWithoutPdf.push(g.unit + ' / ' + g.lesson);
         }
       }
 
@@ -544,7 +680,23 @@
       return (g.video>0) || (g.practice>0) || (g.quiz>0) || g.other.some(function(o){return o.count>0;});
     }).length;
 
-    return { rows: out, lessonCount: lessonCount };
+    var unmatchedMapLessons = [];
+    if (pagesByLesson){
+      Object.keys(pagesByLesson).forEach(function(key){
+        if (!matchedLessonKeys[key]){
+          var parts = key.split(KEY_SEP);
+          unmatchedMapLessons.push(parts[0] + ' / ' + parts[1]);
+        }
+      });
+    }
+
+    return {
+      rows: out,
+      lessonCount: lessonCount,
+      noncontigLessons: noncontigLessons,
+      lessonsWithoutPdf: lessonsWithoutPdf,
+      unmatchedMapLessons: unmatchedMapLessons
+    };
   }
 
   // ---------------- Step 1 ----------------
@@ -566,6 +718,8 @@
   // ---------------- Step 2: upload ----------------
   var dropzone = document.getElementById('dropzone');
   var fileInput = document.getElementById('fileInput');
+  var mapDropzone = document.getElementById('mapDropzone');
+  var mapFileInput = document.getElementById('mapFileInput');
 
   dropzone.addEventListener('click', function(){ fileInput.click(); });
   dropzone.addEventListener('dragover', function(e){ e.preventDefault(); dropzone.classList.add('drag'); });
@@ -574,21 +728,31 @@
     e.preventDefault();
     dropzone.classList.remove('drag');
     if (e.dataTransfer.files && e.dataTransfer.files[0]){
-      handleFile(e.dataTransfer.files[0]);
+      handleCountsFile(e.dataTransfer.files[0]);
     }
   });
   fileInput.addEventListener('change', function(){
-    if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+    if (fileInput.files && fileInput.files[0]) handleCountsFile(fileInput.files[0]);
+  });
+
+  mapDropzone.addEventListener('click', function(){ mapFileInput.click(); });
+  mapDropzone.addEventListener('dragover', function(e){ e.preventDefault(); mapDropzone.classList.add('drag'); });
+  mapDropzone.addEventListener('dragleave', function(){ mapDropzone.classList.remove('drag'); });
+  mapDropzone.addEventListener('drop', function(e){
+    e.preventDefault();
+    mapDropzone.classList.remove('drag');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]){
+      handleMapFile(e.dataTransfer.files[0]);
+    }
+  });
+  mapFileInput.addEventListener('change', function(){
+    if (mapFileInput.files && mapFileInput.files[0]) handleMapFile(mapFileInput.files[0]);
   });
 
   document.getElementById('backTo1').addEventListener('click', function(){ goToStep(1); });
 
-  function handleFile(file){
-    var errBox = document.getElementById('step2-error');
-    var chipHolder = document.getElementById('fileChipHolder');
-    errBox.innerHTML = '';
-    chipHolder.innerHTML = '';
-
+  // Reads a file as a workbook/CSV and hands back plain-object rows via cb.
+  function readSheetRows(file, cb, onError){
     var reader = new FileReader();
     reader.onload = function(e){
       try{
@@ -597,32 +761,85 @@
         var sheetName = workbook.SheetNames[0];
         var sheet = workbook.Sheets[sheetName];
         var rows = XLSX.utils.sheet_to_json(sheet, { defval:'' });
-
-        var result = buildRoster(rows, state.childName, state.courseName);
-        if (result.error){
-          errBox.innerHTML = '<div class="error-banner">' + result.error + '</div>';
-          return;
-        }
-        if (!result.rows.length){
-          errBox.innerHTML = '<div class="error-banner">Every activity count in that file was 0, so there are no rows to build. Check the Count column and try again.</div>';
-          return;
-        }
-
-        state.fileName = file.name;
-        state.outRows = result.rows;
-        state.lessonCount = result.lessonCount;
-
-        chipHolder.innerHTML = '<span class="filename-chip"><span class="dot"></span>' + escapeHtml(file.name) + '</span>';
-        renderStep3();
-        goToStep(3);
+        cb(rows);
       } catch(err){
-        errBox.innerHTML = '<div class="error-banner">Couldn\'t read that file. Make sure it\'s a .csv, .xlsx, or .xls export and try again.</div>';
+        onError();
       }
     };
-    reader.onerror = function(){
-      errBox.innerHTML = '<div class="error-banner">Couldn\'t read that file from disk. Try again.</div>';
-    };
+    reader.onerror = onError;
     reader.readAsArrayBuffer(file);
+  }
+
+  function applyBuildResult(result){
+    state.outRows = result.rows;
+    state.lessonCount = result.lessonCount;
+    state.noncontigLessons = result.noncontigLessons || [];
+    state.lessonsWithoutPdf = result.lessonsWithoutPdf || [];
+    state.unmatchedMapLessons = result.unmatchedMapLessons || [];
+  }
+
+  function handleCountsFile(file){
+    var errBox = document.getElementById('step2-error');
+    var chipHolder = document.getElementById('fileChipHolder');
+    errBox.innerHTML = '';
+    chipHolder.innerHTML = '';
+
+    readSheetRows(file, function(rows){
+      var result = buildRoster(rows, state.childName, state.courseName, state.pageMap);
+      if (result.error){
+        errBox.innerHTML = '<div class="error-banner">' + result.error + '</div>';
+        return;
+      }
+      if (!result.rows.length){
+        errBox.innerHTML = '<div class="error-banner">Every activity count in that file was 0, so there are no rows to build. Check the Count column and try again.</div>';
+        return;
+      }
+
+      state.countsRows = rows;
+      state.fileName = file.name;
+      applyBuildResult(result);
+
+      chipHolder.innerHTML = '<span class="filename-chip"><span class="dot"></span>' + escapeHtml(file.name) + '</span>';
+      renderStep3();
+      goToStep(3);
+    }, function(){
+      errBox.innerHTML = '<div class="error-banner">Couldn\'t read that file. Make sure it\'s a .csv, .xlsx, or .xls export and try again.</div>';
+    });
+  }
+
+  // The page map is optional and order-independent: it may arrive before or
+  // after the counts sheet. A bad map never blocks the counts-only roster.
+  function handleMapFile(file){
+    var errBox = document.getElementById('step2-map-error');
+    var chipHolder = document.getElementById('mapChipHolder');
+    errBox.innerHTML = '';
+
+    readSheetRows(file, function(rows){
+      var parsed = parsePageMap(rows);
+      if (parsed.error){
+        errBox.innerHTML = '<div class="error-banner">' + parsed.error + ' The roster can still be built without PDF rows.</div>';
+        return;
+      }
+
+      state.pageMap = parsed.pagesByLesson;
+      state.mapFileName = file.name;
+      chipHolder.innerHTML = '<span class="filename-chip"><span class="dot"></span>' + escapeHtml(file.name) + '</span>';
+      if (parsed.warnings.length){
+        errBox.innerHTML = '<div class="warning-banner">' + parsed.warnings.map(escapeHtml).join('<br>') + '</div>';
+      }
+
+      // The counts sheet still drives navigation to Step 3; if it's already
+      // loaded, rebuild now so the map's PDF rows show up immediately.
+      if (state.countsRows){
+        var result = buildRoster(state.countsRows, state.childName, state.courseName, state.pageMap);
+        if (!result.error && result.rows.length){
+          applyBuildResult(result);
+          renderStep3();
+        }
+      }
+    }, function(){
+      errBox.innerHTML = '<div class="error-banner">Couldn\'t read that file. Make sure it\'s a .csv or .xlsx export and try again.</div>';
+    });
   }
 
   function escapeHtml(s){
@@ -636,8 +853,12 @@
     document.getElementById('step3-sub').textContent =
       state.childName + ' \u2014 ' + state.courseName;
 
-    document.getElementById('summaryLine').innerHTML =
-      '<b>' + state.outRows.length + '</b> activity rows built across <b>' + state.lessonCount + '</b> lessons.';
+    var summary = '<b>' + state.outRows.length + '</b> activity rows built across <b>' + state.lessonCount + '</b> lessons.';
+    if (state.pageMap){
+      var pdfCount = state.outRows.filter(function(row){ return row[4] === 'PDF'; }).length;
+      summary += ' Including <b>' + pdfCount + '</b> PDF page-range rows.';
+    }
+    document.getElementById('summaryLine').innerHTML = summary;
 
     var table = document.getElementById('previewTable');
     var maxPreview = 14;
@@ -654,6 +875,29 @@
     } else {
       note.textContent = '';
     }
+
+    renderFlags();
+  }
+
+  function renderFlags(){
+    var area = document.getElementById('flagsArea');
+    var sections = [];
+    if (state.noncontigLessons.length){
+      sections.push(flagSection('Non-contiguous lessons — spot-check these', state.noncontigLessons));
+    }
+    if (state.lessonsWithoutPdf.length){
+      sections.push(flagSection('Lessons with no PDF pages (no PDF row added)', state.lessonsWithoutPdf));
+    }
+    if (state.unmatchedMapLessons.length){
+      sections.push(flagSection('Map lessons not found in the counts sheet', state.unmatchedMapLessons));
+    }
+    area.innerHTML = sections.length ? '<div class="flags-box">' + sections.join('') + '</div>' : '';
+  }
+
+  function flagSection(title, items){
+    return '<h4>' + escapeHtml(title) + '</h4><ul>' +
+      items.map(function(item){ return '<li>' + escapeHtml(item) + '</li>'; }).join('') +
+      '</ul>';
   }
 
   function outputFileBase(){
@@ -690,13 +934,21 @@
   });
 
   document.getElementById('startOver').addEventListener('click', function(){
-    state = { childName:'', courseName:'', fileName:'', outRows:null };
+    state = {
+      childName: '', courseName: '', fileName: '', mapFileName: '',
+      countsRows: null, pageMap: null, outRows: null, lessonCount: 0,
+      noncontigLessons: [], lessonsWithoutPdf: [], unmatchedMapLessons: []
+    };
     document.getElementById('childName').value = '';
     document.getElementById('courseName').value = '';
     document.getElementById('step1-error').innerHTML = '';
     document.getElementById('step2-error').innerHTML = '';
+    document.getElementById('step2-map-error').innerHTML = '';
     document.getElementById('fileChipHolder').innerHTML = '';
+    document.getElementById('mapChipHolder').innerHTML = '';
+    document.getElementById('flagsArea').innerHTML = '';
     fileInput.value = '';
+    mapFileInput.value = '';
     goToStep(1);
   });
 
