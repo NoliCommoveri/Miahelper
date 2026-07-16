@@ -443,6 +443,7 @@
         <div class="btn-row">
           <button class="btn btn-primary" id="downloadXlsx">Download roster (.xlsx)</button>
           <button class="btn btn-ghost" id="downloadCsv">Download as .csv</button>
+          <button class="btn btn-ghost" id="backTo2">&larr; Add or change page map</button>
           <button class="btn btn-ghost" id="startOver">Start over</button>
         </div>
       </section>
@@ -750,6 +751,7 @@
   });
 
   document.getElementById('backTo1').addEventListener('click', function(){ goToStep(1); });
+  document.getElementById('backTo2').addEventListener('click', function(){ goToStep(2); });
 
   // Reads a file as a workbook/CSV and hands back plain-object rows via cb.
   function readSheetRows(file, cb, onError){
@@ -828,13 +830,15 @@
         errBox.innerHTML = '<div class="warning-banner">' + parsed.warnings.map(escapeHtml).join('<br>') + '</div>';
       }
 
-      // The counts sheet still drives navigation to Step 3; if it's already
-      // loaded, rebuild now so the map's PDF rows show up immediately.
+      // If the counts sheet is already loaded (including when the map is
+      // added after Step 3 via "Add or change page map"), rebuild now and
+      // return to the preview so the map's PDF rows show up immediately.
       if (state.countsRows){
         var result = buildRoster(state.countsRows, state.childName, state.courseName, state.pageMap);
         if (!result.error && result.rows.length){
           applyBuildResult(result);
           renderStep3();
+          goToStep(3);
         }
       }
     }, function(){
