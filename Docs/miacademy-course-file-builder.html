@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Miacademy Course File Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --chalkboard:#1E3A2E;
+    --chalkboard-dark:#142821;
+    --chalk:#EFE9D8;
+    --paper:#F1EEE3;
+    --paper-raised:#FBF9F2;
+    --rule:#DAD2BA;
+    --ink:#242320;
+    --muted:#736C5E;
+    --brass:#A97C24;
+    --brass-dark:#8A661D;
+    --pencil:#AE4235;
+    --pencil-bg:#F6E7E3;
+    --ok:#3E6B4F;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;}
+
+  /* ---------- Header band ---------- */
+  header.top{
+    background:
+      radial-gradient(ellipse at 20% -20%, rgba(255,255,255,0.05), transparent 55%),
+      radial-gradient(ellipse at 90% 120%, rgba(255,255,255,0.04), transparent 50%),
+      var(--chalkboard);
+    color:var(--chalk);
+    padding:44px 24px 56px;
+    text-align:center;
+    border-bottom:6px solid var(--chalkboard-dark);
+    position:relative;
+  }
+  header.top h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:clamp(28px,4vw,40px);
+    margin:0 0 8px;
+    letter-spacing:0.01em;
+  }
+  header.top p{
+    margin:0;
+    font-size:15px;
+    color:#C9CFC3;
+    font-weight:400;
+    max-width:520px;
+    margin:0 auto;
+  }
+
+  /* ---------- Shell / card ---------- */
+  .shell{
+    max-width:880px;
+    margin:-34px auto 60px;
+    padding:0 20px;
+  }
+  .card{
+    background:var(--paper-raised);
+    border:1px solid var(--rule);
+    border-radius:6px;
+    box-shadow:0 18px 40px -22px rgba(20,40,30,0.35);
+    display:flex;
+    min-height:460px;
+    overflow:hidden;
+  }
+
+  /* ---------- Ledger tab stepper ---------- */
+  .tabs{
+    display:flex;
+    flex-direction:column;
+    width:180px;
+    flex-shrink:0;
+    background:var(--paper);
+    border-right:1px solid var(--rule);
+    padding:26px 0;
+  }
+  .tab{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:16px 18px 16px 22px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--muted);
+    position:relative;
+    cursor:default;
+    border-left:3px solid transparent;
+  }
+  .tab .num{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    width:20px;height:20px;
+    border-radius:50%;
+    border:1.5px solid var(--rule);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--muted);
+    flex-shrink:0;
+    background:var(--paper-raised);
+  }
+  .tab.active{
+    color:var(--ink);
+    background:var(--paper-raised);
+    border-left:3px solid var(--brass);
+  }
+  .tab.active .num{
+    background:var(--brass);
+    border-color:var(--brass);
+    color:#fff;
+  }
+  .tab.done .num{
+    background:var(--ok);
+    border-color:var(--ok);
+    color:#fff;
+  }
+  .tab.done{color:var(--ink);}
+
+  /* ---------- Main panel ---------- */
+  .panel{
+    flex:1;
+    padding:38px 40px;
+    display:flex;
+    flex-direction:column;
+  }
+  .step{display:none;animation:fadein .35s ease;}
+  .step.active{display:flex;flex-direction:column;flex:1;}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+
+  h2.step-title{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:23px;
+    margin:0 0 6px;
+  }
+  p.step-sub{
+    margin:0 0 26px;
+    color:var(--muted);
+    font-size:14.5px;
+    line-height:1.5;
+    max-width:52ch;
+  }
+
+  label.field-label{
+    font-size:13px;
+    font-weight:600;
+    display:block;
+    margin-bottom:7px;
+  }
+  label.field-label .req{color:var(--pencil);}
+  input[type=text]{
+    width:100%;
+    font-family:'Inter',sans-serif;
+    font-size:15px;
+    padding:11px 13px;
+    border:1.5px solid var(--rule);
+    border-radius:4px;
+    background:#fff;
+    color:var(--ink);
+    margin-bottom:20px;
+  }
+  input[type=text]:focus{outline:2px solid var(--brass);outline-offset:1px;border-color:var(--brass);}
+
+  .btn{
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:14.5px;
+    padding:12px 22px;
+    border-radius:4px;
+    border:none;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .btn:focus-visible{outline:2px solid var(--chalkboard);outline-offset:2px;}
+  .btn-primary{background:var(--brass);color:#fff;}
+  .btn-primary:hover{background:var(--brass-dark);}
+  .btn-primary:disabled{background:#C9BFA3;cursor:not-allowed;}
+  .btn-ghost{background:transparent;color:var(--muted);border:1.5px solid var(--rule);}
+  .btn-ghost:hover{border-color:var(--muted);color:var(--ink);}
+  .btn-row{margin-top:auto;display:flex;gap:12px;padding-top:18px;}
+
+  /* ---------- Upload dropzone ---------- */
+  .dropzone{
+    border:2px dashed var(--rule);
+    border-radius:6px;
+    padding:34px 20px;
+    text-align:center;
+    background:#fff;
+    margin-bottom:16px;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color:var(--brass);
+    background:#FFFCF4;
+  }
+  .dropzone .glyph{font-size:26px;margin-bottom:8px;}
+  .dropzone .main{font-weight:600;font-size:14.5px;}
+  .dropzone .sub{font-size:13px;color:var(--muted);margin-top:4px;}
+  input[type=file]{display:none;}
+
+  .cols-hint{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    background:var(--paper);
+    border:1px solid var(--rule);
+    border-radius:4px;
+    padding:12px 14px;
+    color:var(--muted);
+    line-height:1.7;
+    margin-bottom:8px;
+  }
+  .cols-hint b{color:var(--ink);}
+
+  .filename-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-size:13.5px;
+    background:var(--paper);
+    border:1px solid var(--rule);
+    border-radius:20px;
+    padding:6px 14px 6px 12px;
+    margin-bottom:16px;
+  }
+  .filename-chip .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);}
+
+  .error-banner{
+    background:var(--pencil-bg);
+    border:1px solid #E3B6AC;
+    color:var(--pencil);
+    border-radius:4px;
+    padding:12px 15px;
+    font-size:13.5px;
+    margin-bottom:16px;
+    line-height:1.5;
+  }
+
+  /* ---------- Summary + preview ---------- */
+  .summary-line{
+    font-size:14.5px;
+    margin-bottom:16px;
+  }
+  .summary-line b{
+    font-family:'IBM Plex Mono',monospace;
+    color:var(--ok);
+  }
+  .preview-wrap{
+    border:1px solid var(--rule);
+    border-radius:5px;
+    overflow:auto;
+    max-height:280px;
+    background:#fff;
+    margin-bottom:8px;
+  }
+  table.preview{
+    border-collapse:collapse;
+    width:100%;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+  }
+  table.preview th{
+    position:sticky;top:0;
+    background:var(--chalkboard);
+    color:var(--chalk);
+    text-align:left;
+    padding:8px 10px;
+    font-weight:600;
+    white-space:nowrap;
+  }
+  table.preview td{
+    padding:7px 10px;
+    border-top:1px solid var(--rule);
+    white-space:nowrap;
+  }
+  table.preview tr:nth-child(even) td{background:#FAF8F1;}
+  .preview-note{font-size:12px;color:var(--muted);margin:6px 0 20px;}
+
+  footer.foot{
+    text-align:center;
+    font-size:12px;
+    color:var(--muted);
+    padding:0 20px 40px;
+  }
+
+  @media (max-width:640px){
+    .card{flex-direction:column;min-height:0;}
+    .tabs{
+      flex-direction:row;
+      width:100%;
+      padding:14px 10px;
+      justify-content:space-between;
+      border-right:none;
+      border-bottom:1px solid var(--rule);
+    }
+    .tab{padding:8px 6px;border-left:none;border-bottom:3px solid transparent;flex:1;justify-content:center;font-size:0;}
+    .tab .num{font-size:12px;}
+    .tab.active{border-left:none;border-bottom:3px solid var(--brass);}
+    .panel{padding:28px 22px;}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .step{animation:none;}
+    .btn{transition:none;}
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Miacademy Course File Builder</h1>
+  <p>Turn a unit &middot; lesson &middot; activity-count sheet into a full, one-row-per-activity roster.</p>
+</header>
+
+<div class="shell">
+  <div class="card">
+
+    <nav class="tabs" id="tabs">
+      <div class="tab active" data-tab="1"><span class="num">1</span><span>Child &amp; course</span></div>
+      <div class="tab" data-tab="2"><span class="num">2</span><span>Upload sheet</span></div>
+      <div class="tab" data-tab="3"><span class="num">3</span><span>Download</span></div>
+    </nav>
+
+    <div class="panel">
+
+      <!-- STEP 1 -->
+      <section class="step active" id="step1">
+        <h2 class="step-title">Who is this roster for?</h2>
+        <p class="step-sub">This is recorded once and stamped on every row of the finished roster.</p>
+
+        <label class="field-label" for="childName">Child name <span class="req">*</span></label>
+        <input type="text" id="childName" placeholder="e.g. Talia" autocomplete="off">
+
+        <label class="field-label" for="courseName">Course name <span class="req">*</span></label>
+        <input type="text" id="courseName" placeholder="e.g. Structures of Science" autocomplete="off">
+
+        <div id="step1-error"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="toStep2">Continue to upload &rarr;</button>
+        </div>
+      </section>
+
+      <!-- STEP 2 -->
+      <section class="step" id="step2">
+        <h2 class="step-title">Upload the lesson sheet</h2>
+        <p class="step-sub">One row per activity type, per lesson &mdash; each with a count.</p>
+
+        <div class="cols-hint">
+          Expected columns: <b>Unit Name</b>, <b>Lesson Name</b>, <b>Activity Type</b>, <b>Count</b><br>
+          Activity Type values recognized: <b>Video</b>, <b>Practice Level</b>, <b>Quiz</b>
+        </div>
+
+        <div class="dropzone" id="dropzone">
+          <div class="glyph">&#128196;</div>
+          <div class="main">Click to choose a file, or drop it here</div>
+          <div class="sub">.xlsx, .xls, or .csv</div>
+        </div>
+        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+
+        <div id="fileChipHolder"></div>
+        <div id="step2-error"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="backTo1">&larr; Back</button>
+        </div>
+      </section>
+
+      <!-- STEP 3 -->
+      <section class="step" id="step3">
+        <h2 class="step-title">Roster ready</h2>
+        <p class="step-sub" id="step3-sub"></p>
+
+        <div class="summary-line" id="summaryLine"></div>
+
+        <div class="preview-wrap">
+          <table class="preview" id="previewTable"></table>
+        </div>
+        <div class="preview-note" id="previewNote"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="downloadXlsx">Download roster (.xlsx)</button>
+          <button class="btn btn-ghost" id="downloadCsv">Download as .csv</button>
+          <button class="btn btn-ghost" id="startOver">Start over</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<footer class="foot">Runs entirely in your browser &mdash; nothing is uploaded anywhere.</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------- State ----------------
+  var state = {
+    childName: '',
+    courseName: '',
+    fileName: '',
+    outRows: null // array of [Child Name, Course Name, Unit Name, Lesson Name, Activity Type, Activity Name]
+  };
+
+  var OUT_HEADERS = ['Child Name','Course Name','Unit Name','Lesson Name','Activity Type','Activity Name'];
+
+  // ---------------- Step navigation ----------------
+  function goToStep(n){
+    document.querySelectorAll('.step').forEach(function(el){ el.classList.remove('active'); });
+    document.getElementById('step'+n).classList.add('active');
+
+    document.querySelectorAll('.tab').forEach(function(tab){
+      var t = parseInt(tab.getAttribute('data-tab'), 10);
+      tab.classList.remove('active','done');
+      if (t === n) tab.classList.add('active');
+      else if (t < n) tab.classList.add('done');
+    });
+  }
+
+  // ---------------- Core transformation logic ----------------
+  function normalizeHeader(h){
+    return String(h == null ? '' : h).trim().toLowerCase();
+  }
+
+  function findColumn(headers, matchers){
+    for (var i=0;i<headers.length;i++){
+      var norm = normalizeHeader(headers[i]);
+      for (var j=0;j<matchers.length;j++){
+        if (norm.indexOf(matchers[j]) !== -1) return headers[i];
+      }
+    }
+    return null;
+  }
+
+  function classifyType(rawType){
+    var t = normalizeHeader(rawType);
+    if (t.indexOf('video') !== -1) return 'Video';
+    if (t.indexOf('practice') !== -1) return 'Practice Level';
+    if (t.indexOf('quiz') !== -1) return 'Quiz';
+    return String(rawType == null ? '' : rawType).trim();
+  }
+
+  // rows: array of plain objects as parsed from the sheet's header row
+  function buildRoster(rows, childName, courseName){
+    if (!rows || !rows.length){
+      return { error: "That file doesn't have any rows to read." };
+    }
+
+    var headers = Object.keys(rows[0]);
+    var unitCol   = findColumn(headers, ['unit']);
+    var lessonCol = findColumn(headers, ['lesson']);
+    var typeCol   = findColumn(headers, ['activity type', 'type']);
+    var countCol  = findColumn(headers, ['count']);
+
+    if (!unitCol || !lessonCol || !typeCol || !countCol){
+      return { error: "Couldn't find Unit Name, Lesson Name, Activity Type, and Count columns in that file. Rename the header row to include all four, then upload again." };
+    }
+
+    var order = [];
+    var groups = {};
+
+    rows.forEach(function(row){
+      var unit = String(row[unitCol] == null ? '' : row[unitCol]).trim();
+      var lesson = String(row[lessonCol] == null ? '' : row[lessonCol]).trim();
+      if (!unit && !lesson) return; // skip blank rows
+
+      var key = unit + '\u0001' + lesson;
+      if (!groups[key]){
+        groups[key] = { unit: unit, lesson: lesson, video: 0, practice: 0, quiz: 0, other: [] };
+        order.push(key);
+      }
+      var g = groups[key];
+      var kind = classifyType(row[typeCol]);
+      var count = parseInt(row[countCol], 10);
+      if (isNaN(count)) count = 0;
+
+      if (kind === 'Video') g.video += count;
+      else if (kind === 'Practice Level') g.practice += count;
+      else if (kind === 'Quiz') g.quiz += count;
+      else g.other.push({ type: kind, count: count });
+    });
+
+    var out = [];
+    order.forEach(function(key){
+      var g = groups[key];
+
+      // A) Video -> B) Practice Levels -> D) Quiz, always in this order; E) skip any at 0
+      if (g.video > 0){
+        if (g.video === 1){
+          out.push([childName, courseName, g.unit, g.lesson, 'Video', g.lesson + ' Video']);
+        } else {
+          for (var i=1;i<=g.video;i++){
+            out.push([childName, courseName, g.unit, g.lesson, 'Video', g.lesson + ' Video ' + i]);
+          }
+        }
+      }
+
+      if (g.practice > 0){
+        for (var p=1;p<=g.practice;p++){
+          out.push([childName, courseName, g.unit, g.lesson, 'Practice Level', 'Level ' + p]);
+        }
+      }
+
+      if (g.quiz > 0){
+        for (var q=1;q<=g.quiz;q++){
+          out.push([childName, courseName, g.unit, g.lesson, 'Quiz', g.lesson + ' Quiz']);
+        }
+      }
+
+      // Any activity type beyond Video / Practice Level / Quiz: appended after Quiz,
+      // same "only number if more than one" convention as Video.
+      g.other.forEach(function(o){
+        if (o.count > 0){
+          if (o.count === 1){
+            out.push([childName, courseName, g.unit, g.lesson, o.type, g.lesson + ' ' + o.type]);
+          } else {
+            for (var k=1;k<=o.count;k++){
+              out.push([childName, courseName, g.unit, g.lesson, o.type, g.lesson + ' ' + o.type + ' ' + k]);
+            }
+          }
+        }
+      });
+    });
+
+    var lessonCount = order.filter(function(key){
+      var g = groups[key];
+      return (g.video>0) || (g.practice>0) || (g.quiz>0) || g.other.some(function(o){return o.count>0;});
+    }).length;
+
+    return { rows: out, lessonCount: lessonCount };
+  }
+
+  // ---------------- Step 1 ----------------
+  document.getElementById('toStep2').addEventListener('click', function(){
+    var child = document.getElementById('childName').value.trim();
+    var course = document.getElementById('courseName').value.trim();
+    var errBox = document.getElementById('step1-error');
+    errBox.innerHTML = '';
+
+    if (!child || !course){
+      errBox.innerHTML = '<div class="error-banner">Enter both a child name and a course name before continuing.</div>';
+      return;
+    }
+    state.childName = child;
+    state.courseName = course;
+    goToStep(2);
+  });
+
+  // ---------------- Step 2: upload ----------------
+  var dropzone = document.getElementById('dropzone');
+  var fileInput = document.getElementById('fileInput');
+
+  dropzone.addEventListener('click', function(){ fileInput.click(); });
+  dropzone.addEventListener('dragover', function(e){ e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', function(){ dropzone.classList.remove('drag'); });
+  dropzone.addEventListener('drop', function(e){
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]){
+      handleFile(e.dataTransfer.files[0]);
+    }
+  });
+  fileInput.addEventListener('change', function(){
+    if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+  });
+
+  document.getElementById('backTo1').addEventListener('click', function(){ goToStep(1); });
+
+  function handleFile(file){
+    var errBox = document.getElementById('step2-error');
+    var chipHolder = document.getElementById('fileChipHolder');
+    errBox.innerHTML = '';
+    chipHolder.innerHTML = '';
+
+    var reader = new FileReader();
+    reader.onload = function(e){
+      try{
+        var data = new Uint8Array(e.target.result);
+        var workbook = XLSX.read(data, { type:'array' });
+        var sheetName = workbook.SheetNames[0];
+        var sheet = workbook.Sheets[sheetName];
+        var rows = XLSX.utils.sheet_to_json(sheet, { defval:'' });
+
+        var result = buildRoster(rows, state.childName, state.courseName);
+        if (result.error){
+          errBox.innerHTML = '<div class="error-banner">' + result.error + '</div>';
+          return;
+        }
+        if (!result.rows.length){
+          errBox.innerHTML = '<div class="error-banner">Every activity count in that file was 0, so there are no rows to build. Check the Count column and try again.</div>';
+          return;
+        }
+
+        state.fileName = file.name;
+        state.outRows = result.rows;
+        state.lessonCount = result.lessonCount;
+
+        chipHolder.innerHTML = '<span class="filename-chip"><span class="dot"></span>' + escapeHtml(file.name) + '</span>';
+        renderStep3();
+        goToStep(3);
+      } catch(err){
+        errBox.innerHTML = '<div class="error-banner">Couldn\'t read that file. Make sure it\'s a .csv, .xlsx, or .xls export and try again.</div>';
+      }
+    };
+    reader.onerror = function(){
+      errBox.innerHTML = '<div class="error-banner">Couldn\'t read that file from disk. Try again.</div>';
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // ---------------- Step 3: preview + download ----------------
+  function renderStep3(){
+    document.getElementById('step3-sub').textContent =
+      state.childName + ' \u2014 ' + state.courseName;
+
+    document.getElementById('summaryLine').innerHTML =
+      '<b>' + state.outRows.length + '</b> activity rows built across <b>' + state.lessonCount + '</b> lessons.';
+
+    var table = document.getElementById('previewTable');
+    var maxPreview = 14;
+    var html = '<thead><tr>' + OUT_HEADERS.map(function(h){ return '<th>'+escapeHtml(h)+'</th>'; }).join('') + '</tr></thead><tbody>';
+    state.outRows.slice(0, maxPreview).forEach(function(row){
+      html += '<tr>' + row.map(function(cell){ return '<td>'+escapeHtml(cell)+'</td>'; }).join('') + '</tr>';
+    });
+    html += '</tbody>';
+    table.innerHTML = html;
+
+    var note = document.getElementById('previewNote');
+    if (state.outRows.length > maxPreview){
+      note.textContent = 'Showing the first ' + maxPreview + ' of ' + state.outRows.length + ' rows. The full roster is in the download.';
+    } else {
+      note.textContent = '';
+    }
+  }
+
+  function outputFileBase(){
+    var now = new Date();
+    var mm = String(now.getMonth() + 1).padStart(2, '0');
+    var dd = String(now.getDate()).padStart(2, '0');
+    var yyyy = now.getFullYear();
+    var dateStr = mm + dd + yyyy;
+    var course = String(state.courseName || '').trim().replace(/\s+/g, '_');
+    var raw = 'Mia_' + course + '_' + dateStr;
+    return raw.replace(/[\\/:*?"<>|]/g, '').trim() || ('Mia_' + dateStr);
+  }
+
+  document.getElementById('downloadXlsx').addEventListener('click', function(){
+    var ws = XLSX.utils.aoa_to_sheet([OUT_HEADERS].concat(state.outRows));
+    ws['!cols'] = [ {wch:14}, {wch:20}, {wch:26}, {wch:34}, {wch:16}, {wch:40} ];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Course Structure');
+    XLSX.writeFile(wb, outputFileBase() + '.xlsx');
+  });
+
+  document.getElementById('downloadCsv').addEventListener('click', function(){
+    var ws = XLSX.utils.aoa_to_sheet([OUT_HEADERS].concat(state.outRows));
+    var csv = XLSX.utils.sheet_to_csv(ws);
+    var blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = outputFileBase() + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('startOver').addEventListener('click', function(){
+    state = { childName:'', courseName:'', fileName:'', outRows:null };
+    document.getElementById('childName').value = '';
+    document.getElementById('courseName').value = '';
+    document.getElementById('step1-error').innerHTML = '';
+    document.getElementById('step2-error').innerHTML = '';
+    document.getElementById('fileChipHolder').innerHTML = '';
+    fileInput.value = '';
+    goToStep(1);
+  });
+
+})();
+</script>
+
+</body>
+</html>
