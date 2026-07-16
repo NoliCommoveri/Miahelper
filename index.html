@@ -515,37 +515,41 @@
   // matches the character buildRoster's own grouping uses.
   var KEY_SEP = '\u0001';
 
-  // Parses the optional page-map CSV into a per-lesson list of trimmed page
-  // numbers, keyed the same way buildRoster keys its lesson groups.
+  // Parses the optional page-map CSV into a per-lesson list of ORIGINAL page
+  // numbers — the numbers printed on the page itself, which is what a child
+  // actually sees when looking at the trimmed PDF. trimmed_page is only used
+  // here to sanity-check the map file's own integrity, never for display.
   function parsePageMap(rows){
     if (!rows || !rows.length){
       return { error: "The page map file has no rows." };
     }
     var headers = Object.keys(rows[0]);
     var tpCol = findColumn(headers, ['trimmed_page', 'trimmed page', 'trimmed']);
+    var opCol = findColumn(headers, ['original_page', 'original page', 'original']);
     var unitCol = findColumn(headers, ['unit']);
     var lessonCol = findColumn(headers, ['lesson']);
-    if (!tpCol || !unitCol || !lessonCol){
-      return { error: "The page map needs trimmed_page, Unit Name, and Lesson Name columns." };
+    if (!tpCol || !opCol || !unitCol || !lessonCol){
+      return { error: "The page map needs trimmed_page, original_page, Unit Name, and Lesson Name columns." };
     }
 
     var pagesByLesson = {};
-    var allPages = [];
+    var allTrimmedPages = [];
     rows.forEach(function(r){
       var unit = String(r[unitCol] == null ? '' : r[unitCol]).trim();
       var lesson = String(r[lessonCol] == null ? '' : r[lessonCol]).trim();
-      var pg = parseInt(r[tpCol], 10);
-      if ((!unit && !lesson) || isNaN(pg)) return;
+      var tp = parseInt(r[tpCol], 10);
+      var op = parseInt(r[opCol], 10);
+      if ((!unit && !lesson) || isNaN(tp) || isNaN(op)) return;
       var key = unit + KEY_SEP + lesson;
       if (!pagesByLesson[key]) pagesByLesson[key] = [];
-      pagesByLesson[key].push(pg);
-      allPages.push(pg);
+      pagesByLesson[key].push(op);
+      allTrimmedPages.push(tp);
     });
 
     // The whole file's trimmed_page values should form a clean 1..N sequence;
     // gaps or duplicates mean the producer likely erred. Warn, don't block.
     var warnings = [];
-    var sorted = allPages.slice().sort(function(a, b){ return a - b; });
+    var sorted = allTrimmedPages.slice().sort(function(a, b){ return a - b; });
     var clean = true;
     for (var i=0;i<sorted.length;i++){
       if (sorted[i] !== i+1){ clean = false; break; }
@@ -557,8 +561,8 @@
     return { pagesByLesson: pagesByLesson, warnings: warnings };
   }
 
-  // Collapses a lesson's trimmed page numbers into a display range, e.g.
-  // "12-19" or the non-contiguous "12-14, 17". Single page renders bare.
+  // Collapses a lesson's page numbers into a display range, e.g. "12-19" or
+  // the non-contiguous "12-14, 17". Single page renders bare.
   function buildPageRange(pages, dash){
     dash = dash || '–'; // en dash
     var uniq = pages.slice().sort(function(a, b){ return a - b; })
